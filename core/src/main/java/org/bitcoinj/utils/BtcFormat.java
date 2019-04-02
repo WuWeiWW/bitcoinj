@@ -20,7 +20,7 @@ import org.bitcoinj.utils.BtcAutoFormat.Style;
 import static org.bitcoinj.utils.BtcAutoFormat.Style.*;
 
 import org.bitcoinj.core.Coin;
-import com.google.common.base.Objects;
+import java.util.Objects;
 import com.google.common.collect.ImmutableList;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkState;
@@ -533,7 +533,7 @@ public abstract class BtcFormat extends Format {
      * <p>This class constructs new instances of {@link BtcFormat}, allowing for the
      * configuration of those instances before they are constructed.  After obtaining a
      * {@code Builder} object from the {@link BtcFormat#builder()} method, invoke the
-     * necessary setter methods to obtain your desired configuration.  Finaly, the {@link
+     * necessary setter methods to obtain your desired configuration.  Finally, the {@link
      * #build()} method returns a new {@code BtcFormat} object that has the specified
      * configuration.
      *
@@ -809,7 +809,7 @@ public abstract class BtcFormat extends Format {
      * locale.
      */
     public static BtcFormat getCodeInstance(int minDecimals) {
-	return getCodeInstance(defaultLocale(), minDecimals);
+        return getCodeInstance(defaultLocale(), minDecimals);
     }
 
     /**
@@ -835,7 +835,7 @@ public abstract class BtcFormat extends Format {
      * fractional satoshis.
      */
     public static BtcFormat getInstance(Locale locale, int minDecimals) {
-	return getCodeInstance(locale, minDecimals);
+        return getCodeInstance(locale, minDecimals);
     }
 
     /**
@@ -847,7 +847,7 @@ public abstract class BtcFormat extends Format {
      * fractional satoshis.
      */
     public static BtcFormat getCodeInstance(Locale locale, int minDecimals) {
-	return getInstance(CODE, locale, minDecimals);
+        return getInstance(CODE, locale, minDecimals);
     }
 
     /**
@@ -856,7 +856,7 @@ public abstract class BtcFormat extends Format {
      * units using a currency symbol, for example, {@code "µ฿"}.
      */
     public static BtcFormat getSymbolInstance(Locale locale) {
-	return getInstance(SYMBOL, locale);
+        return getInstance(SYMBOL, locale);
     }
 
     /**
@@ -868,7 +868,7 @@ public abstract class BtcFormat extends Format {
      * fractional satoshis.
      */
     public static BtcFormat getSymbolInstance(Locale locale, int fractionPlaces) {
-	return getInstance(SYMBOL, locale, fractionPlaces);
+        return getInstance(SYMBOL, locale, fractionPlaces);
     }
 
     /**
@@ -889,7 +889,7 @@ public abstract class BtcFormat extends Format {
      * parsing will be done according to the default locale.
      */
     public static BtcFormat getInstance(Style style, int fractionPlaces) {
-	return getInstance(style, defaultLocale(), fractionPlaces);
+        return getInstance(style, defaultLocale(), fractionPlaces);
     }
 
     /**
@@ -902,7 +902,7 @@ public abstract class BtcFormat extends Format {
      * as necessary to avoid giving a place to fractional satoshis.
      */
     public static BtcFormat getInstance(Style style, Locale locale) {
-	return getInstance(style, locale, 2);
+        return getInstance(style, locale, 2);
     }
 
     /**
@@ -914,11 +914,11 @@ public abstract class BtcFormat extends Format {
      * according to the given locale.
      *
      * <p>The third parameter is the number of fractional decimal places to use for each
-     * formatted number, reduced as neccesary when formatting to avoid giving a place to
+     * formatted number, reduced as necessary when formatting to avoid giving a place to
      * fractional satoshis.
      */
     public static BtcFormat getInstance(Style style, Locale locale, int fractionPlaces) {
-	return new BtcAutoFormat(locale, style, fractionPlaces);
+        return new BtcAutoFormat(locale, style, fractionPlaces);
     }
 
     /**
@@ -1050,7 +1050,7 @@ public abstract class BtcFormat extends Format {
     }
 
     /**
-     * Return a new fixeed-denomination formatter with the specified fractional decimal
+     * Return a new fixed-denomination formatter with the specified fractional decimal
      * placing.  The first argument specifies the denomination as the size of the
      * shift from coin-denomination in increasingly-precise decimal places.  The returned object will format
      * and parse values according to the default locale, and will format the fractional part of
@@ -1064,7 +1064,7 @@ public abstract class BtcFormat extends Format {
     }
 
     /**
-     * Return a new fixeed-denomination formatter.  The argument specifies the denomination as
+     * Return a new fixed-denomination formatter.  The argument specifies the denomination as
      * the size of the shift from coin-denomination in increasingly-precise decimal places.
      * The returned object will format and parse values according to the default locale, and
      * will format the fractional part of numbers with two decimal places, or fewer as
@@ -1075,7 +1075,7 @@ public abstract class BtcFormat extends Format {
     }
 
     /**
-     * Return a new fixeed-denomination formatter for the given locale.  The first argument
+     * Return a new fixed-denomination formatter for the given locale.  The first argument
      * specifies the denomination as the size of the shift from coin-denomination in
      * increasingly-precise decimal places.  The returned object will format and parse values
      * according to the locale specified by the second argument, and will format the fractional
@@ -1131,7 +1131,7 @@ public abstract class BtcFormat extends Format {
         AttributedCharacterIterator i = numberFormat.formatToCharacterIterator(units);
         numberFormat.setDecimalFormatSymbols(anteSigns);
         setFormatterDigits(numberFormat, anteDigits.get(0), anteDigits.get(1));
-	return i;
+        return i;
     }}
 
     /**
@@ -1247,7 +1247,7 @@ public abstract class BtcFormat extends Format {
     }
 
     /** Return the number of fractional decimal places to be displayed when formatting
-     *  the given number of monetory units of the denomination indicated by the given decimal scale value,
+     *  the given number of monetary units of the denomination indicated by the given decimal scale value,
      *  where 0 = coin, 3 = millicoin, and so on.
      *
      *  @param unitCount      the number of monetary units to be formatted
@@ -1282,19 +1282,19 @@ public abstract class BtcFormat extends Format {
      * client is permitted to pass us, and return a BigInteger representing the
      * number of satoshis having the equivalent value. */
     private static BigInteger inSatoshis(Object qty) {
-	BigInteger satoshis;
+        BigInteger satoshis;
         // the value might be bitcoins or satoshis
-	if (qty instanceof Long || qty instanceof Integer)
-	    satoshis = BigInteger.valueOf(((Number)qty).longValue());
-	else if (qty instanceof BigInteger)
-	    satoshis = (BigInteger)qty;
-	else if (qty instanceof BigDecimal)
-	    satoshis = ((BigDecimal)qty).movePointRight(Coin.SMALLEST_UNIT_EXPONENT).
+        if (qty instanceof Long || qty instanceof Integer)
+            satoshis = BigInteger.valueOf(((Number)qty).longValue());
+        else if (qty instanceof BigInteger)
+            satoshis = (BigInteger)qty;
+        else if (qty instanceof BigDecimal)
+            satoshis = ((BigDecimal)qty).movePointRight(Coin.SMALLEST_UNIT_EXPONENT).
                        setScale(0,BigDecimal.ROUND_HALF_UP).unscaledValue();
-	else if (qty instanceof Coin)
-	    satoshis = BigInteger.valueOf(((Coin)qty).value);
-	else
-	    throw new IllegalArgumentException("Cannot format a " + qty.getClass().getSimpleName() +
+        else if (qty instanceof Coin)
+            satoshis = BigInteger.valueOf(((Coin)qty).value);
+        else
+            throw new IllegalArgumentException("Cannot format a " + qty.getClass().getSimpleName() +
                                                " as a Bicoin value");
         return satoshis;
     }
@@ -1526,7 +1526,7 @@ public abstract class BtcFormat extends Format {
     public static Locale[] getAvailableLocales() { return NumberFormat.getAvailableLocales(); }
 
     /** Return the unprefixed currency symbol for bitcoins configured for this object.  The
-     *  return value of this method is constant throughough the life of an instance.  */
+     *  return value of this method is constant throughout the life of an instance.  */
     public String coinSymbol() { synchronized(numberFormat) {
         return numberFormat.getDecimalFormatSymbols().getCurrencySymbol();
     }}
@@ -1588,7 +1588,7 @@ public abstract class BtcFormat extends Format {
      *  @see java.lang.Object#hashCode
      */
     @Override public int hashCode() {
-        return Objects.hashCode(pattern(), symbols(), minimumFractionDigits, decimalGroups);
+        return Objects.hash(pattern(), symbols(), minimumFractionDigits, decimalGroups);
     }
 
 }

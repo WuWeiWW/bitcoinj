@@ -28,6 +28,7 @@ import java.io.*;
 import java.math.*;
 import java.util.*;
 
+import static com.google.common.base.Preconditions.checkState;
 import static org.bitcoinj.core.Coin.*;
 import static org.bitcoinj.core.Sha256Hash.*;
 
@@ -92,7 +93,7 @@ public class Block extends Message {
     // Fields defined as part of the protocol format.
     private long version;
     private Sha256Hash prevBlockHash;
-    private Sha256Hash merkleRoot;
+    private Sha256Hash merkleRoot, witnessRoot;
     private long time;
     private long difficultyTarget; // "nBits"
     private long nonce;
@@ -239,7 +240,7 @@ public class Block extends Message {
         optimalEncodingMessageSize += VarInt.sizeOf(numTransactions);
         transactions = new ArrayList<>(Math.min(numTransactions, Utils.MAX_INITIAL_ARRAY_LENGTH));
         for (int i = 0; i < numTransactions; i++) {
-            Transaction tx = new Transaction(params, payload, cursor, this, serializer, UNKNOWN_LENGTH);
+            Transaction tx = new Transaction(params, payload, cursor, this, serializer, UNKNOWN_LENGTH, null);
             // Label the transaction as coming from the P2P network, so code that cares where we first saw it knows.
             tx.getConfidence().setSource(TransactionConfidence.Source.NETWORK);
             transactions.add(tx);
@@ -303,11 +304,9 @@ public class Block extends Message {
             return;
         }
 
-        if (transactions != null) {
-            stream.write(new VarInt(transactions.size()).encode());
-            for (Transaction tx : transactions) {
-                tx.bitcoinSerialize(stream);
-            }
+        stream.write(new VarInt(transactions.size()).encode());
+        for (Transaction tx : transactions) {
+            tx.bitcoinSerialize(stream);
         }
     }
 
@@ -484,14 +483,15 @@ public class Block extends Message {
             s.append(" (").append(bips).append(')');
         s.append('\n');
         s.append("   previous block: ").append(getPrevBlockHash()).append("\n");
-        s.append("   merkle root: ").append(getMerkleRoot()).append("\n");
         s.append("   time: ").append(time).append(" (").append(Utils.dateTimeFormat(time * 1000)).append(")\n");
         s.append("   difficulty target (nBits): ").append(difficultyTarget).append("\n");
         s.append("   nonce: ").append(nonce).append("\n");
         if (transactions != null && transactions.size() > 0) {
+            s.append("   merkle root: ").append(getMerkleRoot()).append("\n");
+            s.append("   witness root: ").append(getWitnessRoot()).append("\n");
             s.append("   with ").append(transactions.size()).append(" transaction(s):\n");
             for (Transaction tx : transactions) {
-                s.append(tx);
+                s.append(tx).append('\n');
             }
         }
         return s.toString();
@@ -539,7 +539,7 @@ public class Block extends Message {
         // ridiculously easy difficulty and this function would accept them.
         //
         // To prevent this attack from being possible, elsewhere we check that the difficultyTarget
-        // field is of the right value. This requires us to have the preceeding blocks.
+        // field is of the right value. This requires us to have the preceding blocks.
         BigInteger target = getDifficultyTargetAsInteger();
 
         BigInteger h = getHash().toBigInteger();
@@ -581,12 +581,43 @@ public class Block extends Message {
         }
     }
 
+    @VisibleForTesting
+    void checkWitnessRoot() throws VerificationException {
+        Transaction coinbase = transactions.get(0);
+        checkState(coinbase.isCoinBase());
+        Sha256Hash witnessCommitment = coinbase.findWitnessCommitment();
+        if (witnessCommitment != null) {
+            byte[] witnessReserved = null;
+            TransactionWitness witness = coinbase.getInput(0).getWitness();
+            if (witness.getPushCount() != 1)
+                throw new VerificationException("Coinbase witness reserved invalid: push count");
+            witnessReserved = witness.getPush(0);
+            if (witnessReserved.length != 32)
+                throw new VerificationException("Coinbase witness reserved invalid: length");
+
+            Sha256Hash witnessRootHash = Sha256Hash.twiceOf(getWitnessRoot().getReversedBytes(), witnessReserved);
+            if (!witnessRootHash.equals(witnessCommitment))
+                throw new VerificationException("Witness merkle root invalid. Expected " + witnessCommitment.toString()
+                        + " but got " + witnessRootHash.toString());
+        } else {
+            for (Transaction tx : transactions) {
+                if (tx.hasWitnesses())
+                    throw new VerificationException("Transaction witness found but no witness commitment present");
+            }
+        }
+    }
+
     private Sha256Hash calculateMerkleRoot() {
-        List<byte[]> tree = buildMerkleTree();
+        List<byte[]> tree = buildMerkleTree(false);
         return Sha256Hash.wrap(tree.get(tree.size() - 1));
     }
 
-    private List<byte[]> buildMerkleTree() {
+    private Sha256Hash calculateWitnessRoot() {
+        List<byte[]> tree = buildMerkleTree(true);
+        return Sha256Hash.wrap(tree.get(tree.size() - 1));
+    }
+
+    private List<byte[]> buildMerkleTree(boolean useWTxId) {
         // The Merkle root is based on a tree of hashes calculated from the transactions:
         //
         //     root
@@ -599,7 +630,7 @@ public class Block extends Message {
         // entry is a hash.
         //
         // The hashing algorithm is double SHA-256. The leaves are a hash of the serialized contents of the transaction.
-        // The interior nodes are hashes of the concenation of the two child hashes.
+        // The interior nodes are hashes of the concatenation of the two child hashes.
         //
         // This structure allows the creation of proof that a transaction was included into a block without having to
         // provide the full block contents. Instead, you can provide only a Merkle branch. For example to prove tx2 was
@@ -617,10 +648,15 @@ public class Block extends Message {
         //    2     3    4  4
         //  / \   / \   / \
         // t1 t2 t3 t4 t5 t5
-        ArrayList<byte[]> tree = new ArrayList<>();
+        ArrayList<byte[]> tree = new ArrayList<>(transactions.size());
         // Start by adding all the hashes of the transactions as leaves of the tree.
-        for (Transaction t : transactions) {
-            tree.add(t.getHash().getBytes());
+        for (Transaction tx : transactions) {
+            final Sha256Hash id;
+            if (useWTxId && tx.isCoinBase())
+                id = Sha256Hash.ZERO_HASH;
+            else
+                id = useWTxId ? tx.getWTxId() : tx.getTxId();
+            tree.add(id.getBytes());
         }
         int levelOffset = 0; // Offset in the list where the currently processed level starts.
         // Step through each level, stopping when we reach the root (levelSize == 1).
@@ -632,7 +668,7 @@ public class Block extends Message {
                 int right = Math.min(left + 1, levelSize - 1);
                 byte[] leftBytes = Utils.reverseBytes(tree.get(levelOffset + left));
                 byte[] rightBytes = Utils.reverseBytes(tree.get(levelOffset + right));
-                tree.add(Utils.reverseBytes(hashTwice(leftBytes, 0, 32, rightBytes, 0, 32)));
+                tree.add(Utils.reverseBytes(hashTwice(leftBytes, rightBytes)));
             }
             // Move to the next level.
             levelOffset += levelSize;
@@ -693,7 +729,7 @@ public class Block extends Message {
         // Now we need to check that the body of the block actually matches the headers. The network won't generate
         // an invalid block, but if we didn't validate this then an untrusted man-in-the-middle could obtain the next
         // valid block from the network and simply replace the transactions in it with their own fictional
-        // transactions that reference spent or non-existant inputs.
+        // transactions that reference spent or non-existent inputs.
         if (transactions.isEmpty())
             throw new VerificationException("Block had no transactions");
         if (this.getOptimalEncodingMessageSize() > MAX_BLOCK_SIZE)
@@ -747,6 +783,15 @@ public class Block extends Message {
         unCacheHeader();
         merkleRoot = value;
         hash = null;
+    }
+
+    /**
+     * Returns the witness root in big endian form, calculating it from transactions if necessary.
+     */
+    public Sha256Hash getWitnessRoot() {
+        if (witnessRoot == null)
+            witnessRoot = calculateWitnessRoot();
+        return witnessRoot;
     }
 
     /** Adds a transaction to this block. The nonce and merkle root are invalid after this. */
@@ -882,7 +927,7 @@ public class Block extends Message {
         coinbase.addInput(new TransactionInput(params, coinbase,
                 inputBuilder.build().getProgram()));
         coinbase.addOutput(new TransactionOutput(params, coinbase, value,
-                ScriptBuilder.createOutputScript(ECKey.fromPublicOnly(pubKeyTo)).getProgram()));
+                ScriptBuilder.createP2PKOutputScript(ECKey.fromPublicOnly(pubKeyTo)).getProgram()));
         transactions.add(coinbase);
         coinbase.setParent(this);
         coinbase.length = coinbase.unsafeBitcoinSerialize().length;

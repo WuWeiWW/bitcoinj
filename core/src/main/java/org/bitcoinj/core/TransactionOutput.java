@@ -17,7 +17,6 @@
 
 package org.bitcoinj.core;
 
-import com.google.common.base.Objects;
 import org.bitcoinj.script.*;
 import org.bitcoinj.wallet.Wallet;
 import org.slf4j.*;
@@ -26,6 +25,7 @@ import javax.annotation.*;
 import java.io.*;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Objects;
 
 import static com.google.common.base.Preconditions.*;
 
@@ -96,7 +96,7 @@ public class TransactionOutput extends ChildMessage {
      * {@link Transaction#addOutput(Coin, ECKey)} instead of creating an output directly.
      */
     public TransactionOutput(NetworkParameters params, @Nullable Transaction parent, Coin value, ECKey to) {
-        this(params, parent, value, ScriptBuilder.createOutputScript(to).getProgram());
+        this(params, parent, value, ScriptBuilder.createP2PKOutputScript(to).getProgram());
     }
 
     public TransactionOutput(NetworkParameters params, @Nullable Transaction parent, Coin value, byte[] scriptBytes) {
@@ -122,17 +122,17 @@ public class TransactionOutput extends ChildMessage {
     @Nullable
     @Deprecated
     public LegacyAddress getAddressFromP2PKHScript(NetworkParameters params) throws ScriptException {
-        if (ScriptPattern.isPayToPubKeyHash(getScriptPubKey()))
+        if (ScriptPattern.isP2PKH(getScriptPubKey()))
             return LegacyAddress.fromPubKeyHash(params,
-                    ScriptPattern.extractHashFromPayToPubKeyHash(getScriptPubKey()));
+                    ScriptPattern.extractHashFromP2PKH(getScriptPubKey()));
         return null;
     }
 
     @Nullable
     @Deprecated
     public LegacyAddress getAddressFromP2SH(NetworkParameters params) throws ScriptException {
-        if (ScriptPattern.isPayToScriptHash(getScriptPubKey()))
-            return LegacyAddress.fromScriptHash(params, ScriptPattern.extractHashFromPayToScriptHash(getScriptPubKey()));
+        if (ScriptPattern.isP2SH(getScriptPubKey()))
+            return LegacyAddress.fromScriptHash(params, ScriptPattern.extractHashFromP2SH(getScriptPubKey()));
         return null;
     }
 
@@ -301,17 +301,22 @@ public class TransactionOutput extends ChildMessage {
     public boolean isMine(TransactionBag transactionBag) {
         try {
             Script script = getScriptPubKey();
-            if (ScriptPattern.isPayToPubKey(script)) {
-                return transactionBag.isPubKeyMine(ScriptPattern.extractKeyFromPayToPubKey(script));
-            } if (ScriptPattern.isPayToScriptHash(script)) {
-                return transactionBag.isPayToScriptHashMine(ScriptPattern.extractHashFromPayToScriptHash(script));
-            } else {
-                byte[] pubkeyHash = script.getPubKeyHash();
-                return transactionBag.isPubKeyHashMine(pubkeyHash);
-            }
+            if (ScriptPattern.isP2PK(script))
+                return transactionBag.isPubKeyMine(ScriptPattern.extractKeyFromP2PK(script));
+            else if (ScriptPattern.isP2SH(script))
+                return transactionBag.isPayToScriptHashMine(ScriptPattern.extractHashFromP2SH(script));
+            else if (ScriptPattern.isP2PKH(script))
+                return transactionBag.isPubKeyHashMine(ScriptPattern.extractHashFromP2PKH(script),
+                        Script.ScriptType.P2PKH);
+            else if (ScriptPattern.isP2WPKH(script))
+                return transactionBag.isPubKeyHashMine(ScriptPattern.extractHashFromP2WH(script),
+                        Script.ScriptType.P2WPKH);
+            else
+                return false;
         } catch (ScriptException e) {
             // Just means we didn't understand the output of this transaction: ignore it.
-            log.debug("Could not parse tx {} output script: {}", parent != null ? parent.getHash() : "(no parent)", e.toString());
+            log.debug("Could not parse tx {} output script: {}",
+                    parent != null ? ((Transaction) parent).getTxId() : "(no parent)", e.toString());
             return false;
         }
     }
@@ -325,10 +330,11 @@ public class TransactionOutput extends ChildMessage {
             Script script = getScriptPubKey();
             StringBuilder buf = new StringBuilder("TxOut of ");
             buf.append(Coin.valueOf(value).toFriendlyString());
-            if (ScriptPattern.isPayToPubKeyHash(script) || ScriptPattern.isPayToScriptHash(script))
+            if (ScriptPattern.isP2PKH(script) || ScriptPattern.isP2WPKH(script)
+                    || ScriptPattern.isP2SH(script))
                 buf.append(" to ").append(script.getToAddress(params));
-            else if (ScriptPattern.isPayToPubKey(script))
-                buf.append(" to pubkey ").append(Utils.HEX.encode(ScriptPattern.extractKeyFromPayToPubKey(script)));
+            else if (ScriptPattern.isP2PK(script))
+                buf.append(" to pubkey ").append(Utils.HEX.encode(ScriptPattern.extractKeyFromP2PK(script)));
             else if (ScriptPattern.isSentToMultisig(script))
                 buf.append(" to multisig");
             else
@@ -361,7 +367,7 @@ public class TransactionOutput extends ChildMessage {
      */
     @Nullable
     public Sha256Hash getParentTransactionHash() {
-        return parent == null ? null : parent.getHash();
+        return parent == null ? null : ((Transaction) parent).getTxId();
     }
 
     /**
@@ -405,6 +411,6 @@ public class TransactionOutput extends ChildMessage {
 
     @Override
     public int hashCode() {
-        return Objects.hashCode(value, parent, Arrays.hashCode(scriptBytes));
+        return Objects.hash(value, parent, Arrays.hashCode(scriptBytes));
     }
 }
